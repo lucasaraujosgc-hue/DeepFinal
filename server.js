@@ -884,7 +884,8 @@ const authenticateToken = (req, res, next) => {
     const parts = token.split('-');
     if (parts.length < 3) return res.status(403).json({ error: 'Token inválido' });
     const user = parts.slice(2).join('-'); 
-    const envUsers = (process.env.USERS || '').split(',');
+    const envUsersStr = process.env.USERS || 'admin';
+    const envUsers = envUsersStr.split(',').map(u => u.trim());
     if (!envUsers.includes(user)) return res.status(403).json({ error: 'Usuário não autorizado' });
     req.user = user;
     next();

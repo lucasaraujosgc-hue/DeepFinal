@@ -75,14 +75,17 @@ export default function Dashboard() {
       const [colsRes, chatsRes, tagsRes] = await Promise.all([
         apiFetch('/api/columns'), apiFetch('/api/chats'), apiFetch('/api/tags')
       ]);
-      setColumns(await colsRes.json());
-      const newChats = await chatsRes.json();
-      setChats(newChats);
-      setTags(await tagsRes.json());
+      const columnsData = await colsRes.json();
+      const chatsData = await chatsRes.json();
+      const tagsData = await tagsRes.json();
+
+      setColumns(Array.isArray(columnsData) ? columnsData : []);
+      setChats(Array.isArray(chatsData) ? chatsData : []);
+      setTags(Array.isArray(tagsData) ? tagsData : []);
       
       setSelectedChat((prev: Chat | null) => {
         if (!prev) return null;
-        const updated = newChats.find((c: Chat) => c.id === prev.id);
+        const updated = Array.isArray(chatsData) ? chatsData.find((c: Chat) => c.id === prev.id) : null;
         return updated ? { ...prev, ...updated } : prev;
       });
     } catch (e) { console.error(e); }
@@ -124,7 +127,7 @@ export default function Dashboard() {
     setIsRightSidebarOpen(true);
     if (chat.unread_count > 0) {
       await apiFetch(`/api/chats/${chat.id}/read`, { method: 'PUT' });
-      setChats(prev => prev.map(c => c.id === chat.id ? { ...c, unread_count: 0 } : c));
+      setChats(prev => (Array.isArray(prev) ? prev : []).map(c => c.id === chat.id ? { ...c, unread_count: 0 } : c));
     }
     loadMessages(chat.id);
   };
@@ -233,7 +236,7 @@ export default function Dashboard() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider mr-2">Tags:</span>
-          {tags.map(tag => {
+          {(tags || []).map(tag => {
             const isSelected = selectedTagFilters.includes(tag.id);
             return (
               <button
@@ -264,7 +267,7 @@ export default function Dashboard() {
       <div className="flex-1 flex overflow-hidden">
         {/* Kanban Board */}
         <div className="flex-1 overflow-x-auto overflow-y-hidden p-6 flex gap-6 items-start items-stretch">
-        {columns.map(column => (
+        {(columns || []).map(column => (
           <div 
             key={column.id} 
             className="flex-shrink-0 w-[300px] bg-slate-100/50 rounded-2xl border border-slate-200/60 flex flex-col max-h-full overflow-hidden shadow-sm"
@@ -299,7 +302,7 @@ export default function Dashboard() {
             </div>
             
             <div className="p-3 flex-1 overflow-y-auto space-y-3 no-scrollbar custom-column-scroll">
-              {filteredChats.filter(c => c.column_id === column.id).map(chat => (
+              {(filteredChats || []).filter(c => c.column_id === column.id).map(chat => (
                 <div 
                   key={chat.id} 
                   onClick={() => handleChatSelect(chat)}
@@ -416,7 +419,7 @@ export default function Dashboard() {
             </div>
             
             <div ref={chatScrollContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#e5ddd5]" onDrop={handleDrop} onDragOver={handleDragOver} style={{ backgroundImage: "url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')", backgroundRepeat: 'repeat', backgroundSize: '400px' }}>
-              {messages.map((msg, index) => {
+              {(messages || []).map((msg, index) => {
                 const currentMsgDate = new Date(msg.timestamp);
                 const prevMsgDate = index > 0 ? new Date(messages[index - 1].timestamp) : null;
                 const showDateSeparator = !prevMsgDate || !isSameDay(currentMsgDate, prevMsgDate);
