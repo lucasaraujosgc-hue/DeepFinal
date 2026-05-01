@@ -778,8 +778,9 @@ const getWaClientWrapper = (username) => {
                         }
                     });
 
-                    db.run("INSERT INTO messages (id, chat_id, body, from_me, timestamp, media_url, media_type, media_name, transcription) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        [msg.id.id, chatId, body, fromMe, timestamp, mediaUrl, mediaType, mediaName, transcription], () => {
+                    db.run("INSERT INTO messages (id, chat_id, body, from_me, timestamp, media_url, media_type, media_name, transcription) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
+                        [msg.id.id, chatId, body, fromMe, timestamp, mediaUrl, mediaType, mediaName, transcription], (err) => {
+                            if (err) log('Error inserting incoming message', err);
                             io.emit('new_message', { id: msg.id.id, chat_id: chatId, body, from_me: fromMe, timestamp, media_url: mediaUrl, media_type: mediaType, media_name: mediaName, transcription });
                         });
                 });
@@ -1464,16 +1465,83 @@ app.delete('/api/tags/:id', (req, res) => { getDb(req.user).run("DELETE FROM cha
 app.post('/api/chats/:id/tags', (req, res) => getDb(req.user).run("INSERT INTO chat_tags (chat_id, tag_id) VALUES (?, ?) ON CONFLICT DO NOTHING", [req.params.id, req.body.tag_id], () => { io.emit('chat_tags_updated'); res.json({success:true}); }));
 app.delete('/api/chats/:id/tags/:tag_id', (req, res) => getDb(req.user).run("DELETE FROM chat_tags WHERE chat_id = ? AND tag_id = ?", [req.params.id, req.params.tag_id], () => { io.emit('chat_tags_updated'); res.json({success:true});}));
 
-app.get('/api/chats/:id/messages', (req, res) => {
-    getDb(req.user).all("SELECT * FROM messages WHERE chat_id = ? ORDER BY timestamp ASC", [req.params.id], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        const out = (rows || []).map(m => ({
-            ...m,
-            timestamp: Number(m.timestamp || 0),
-            from_me: Number(m.from_me || 0)
-        }));
-        res.json(out);
-    });
+app.get('/api/chats/:id/messages', async (req, res) => {
+    try {
+        const chatId = req.params.id;
+        const db = getDb(req.user);
+        
+        db.all("SELECT * FROM messages WHERE chat_id = ? ORDER BY timestamp ASC", [chatId], async (err, rows) => {
+            if (err) return res.status(500).json({ error: err.message });
+            
+            // If we have messages, just return them
+            if (rows && rows.length > 0) {
+                const out = rows.map(m => ({
+                    ...m,
+                    timestamp: Number(m.timestamp || 0),
+                    from_me: Number(m.from_me || 0)
+                }));
+                return res.json(out);
+            }
+            
+            // If empty, try to fetch from WhatsApp client
+            const waWrapper = getWaClientWrapper(req.user);
+            if (waWrapper && waWrapper.status === 'connected') {
+                try {
+                    log(`Buscando histórico de mensagens para o chat ${chatId}`);
+                    const chat = await waWrapper.client.getChatById(chatId);
+                    const historicalMsgs = await chat.fetchMessages({ limit: 50 });
+                    
+                    const out = [];
+                    for (const msg of historicalMsgs) {
+                        const body = msg.body;
+                        const msgTimestamp = msg.timestamp * 1000;
+                        const fromMe = msg.fromMe ? 1 : 0;
+                        let mediaUrl = null, mediaType = null, mediaName = null;
+                        
+                        try {
+                            if (msg.hasMedia) {
+                                const media = await msg.downloadMedia();
+                                if (media && media.data) {
+                                    const filename = `${msg.id.id}_${media.filename || 'media'}.${media.mimetype.split('/')[1]?.split(';')[0] || 'bin'}`;
+                                    const relativePath = `/uploads/media/${filename}`;
+                                    const fullPath = path.join(MEDIA_DIR, filename);
+                                    fs.writeFileSync(fullPath, Buffer.from(media.data, 'base64'));
+                                    mediaUrl = relativePath;
+                                    mediaType = media.mimetype;
+                                    mediaName = media.filename || 'Media';
+                                }
+                            }
+                        } catch(e) { log('Erro ao baixar midia do hitórico', e); }
+                        
+                        // Async insert (don't block the loop)
+                        db.run("INSERT INTO messages (id, chat_id, body, from_me, timestamp, media_url, media_type, media_name, transcription) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
+                            [msg.id.id, chatId, body, fromMe, msgTimestamp, mediaUrl, mediaType, mediaName, null]);
+                        
+                        out.push({
+                            id: msg.id.id,
+                            chat_id: chatId,
+                            body: body,
+                            from_me: fromMe,
+                            timestamp: msgTimestamp,
+                            media_url: mediaUrl,
+                            media_type: mediaType,
+                            media_name: mediaName,
+                            transcription: null
+                        });
+                    }
+                    
+                    log(`Histórico carregado: ${out.length} mensagens`);
+                    return res.json(out);
+                } catch (waErr) {
+                    log("Erro ao buscar historico do WhatsApp", waErr);
+                }
+            }
+            
+            res.json([]);
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 app.post('/api/chats/:id/messages', upload.single('media'), async (req, res) => {
     const { body } = req.body;
@@ -1502,7 +1570,8 @@ app.post('/api/chats/:id/messages', upload.single('media'), async (req, res) => 
         const msgId = Date.now().toString();
         const ts = Date.now();
         const db = getDb(req.user);
-        db.run("INSERT INTO messages (id, chat_id, body, from_me, timestamp, media_url, media_type, media_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", [msgId, chatId, body||'', 1, ts, mediaUrl, mediaType, mediaName], () => {
+        db.run("INSERT INTO messages (id, chat_id, body, from_me, timestamp, media_url, media_type, media_name, transcription) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING", [msgId, chatId, body||'', 1, ts, mediaUrl, mediaType, mediaName, null], (err) => {
+            if (err) log('Error inserting outgoing message', err);
             db.run("UPDATE chats SET last_message=?, last_message_time=?, last_message_from_me=1 WHERE id=?", [body||'Media', ts, chatId], () => {
                 io.emit('new_message', {id: msgId, chat_id: chatId, body: body||'', from_me: 1, timestamp: ts, media_url: mediaUrl, media_type: mediaType, media_name: mediaName});
                 res.json({success:true});

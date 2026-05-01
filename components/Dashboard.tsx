@@ -119,8 +119,18 @@ export default function Dashboard() {
   const loadMessages = async (chatId: string) => {
     try {
       const res = await apiFetch(`/api/chats/${encodeURIComponent(chatId)}/messages`);
-      setMessages(await res.json());
-    } catch (e) {}
+      const data = await res.json();
+      if (!res.ok) {
+        console.error('Error loading messages:', data);
+        alert('Erro ao carregar mensagens: ' + (data.error || 'Erro desconhecido'));
+        setMessages([]);
+        return;
+      }
+      setMessages(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error(e);
+      setMessages([]);
+    }
   };
 
   const handleChatSelect = async (chat: Chat) => {
