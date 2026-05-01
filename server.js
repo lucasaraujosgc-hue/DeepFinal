@@ -1103,6 +1103,18 @@ app.post('/api/wa/reset', async (req, res) => {
         res.json({ success: true });
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
+app.post('/api/whatsapp/reset', async (req, res) => {
+    // Alias para compatibilidade
+    const username = req.user;
+    if (waClients[username]?.client) {
+        try { await waClients[username].client.destroy(); } catch (e) {}
+        delete waClients[username];
+    }
+    const authPath = path.join(DATA_DIR, `whatsapp_auth_${username}`);
+    if (fs.existsSync(authPath)) fs.rmSync(authPath, { recursive: true, force: true });
+    getWaClientWrapper(username);
+    res.json({ success: true });
+});
 app.post('/api/wa/restart', async (req, res) => {
     try {
         const username = req.user;

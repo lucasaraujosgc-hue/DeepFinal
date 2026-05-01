@@ -14,7 +14,8 @@ import {
   X,
   Mails,
   UserCog,
-  LogOut
+  LogOut,
+  Image as ImageIcon
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -35,6 +36,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, setActivePage, isOpen, se
     { id: 'bulksend', label: 'Envio em Massa', icon: Mails },
     { id: 'scheduled', label: 'Agendamentos', icon: CalendarClock },
     { id: 'whatsapp', label: 'WhatsApp', icon: MessageCircle },
+    { id: 'gallery', label: 'Galeria de Arquivos', icon: ImageIcon },
+    { id: 'ai_memory', label: 'Base de Conhecimento IA', icon: Users },
     { id: 'settings', label: 'Usuário', icon: UserCog },
   ];
 

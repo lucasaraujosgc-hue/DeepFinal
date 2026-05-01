@@ -117,7 +117,7 @@ export default function Dashboard() {
 
   const loadMessages = async (chatId: string) => {
     try {
-      const res = await apiFetch(`/api/chats/${chatId}/messages`);
+      const res = await apiFetch(`/api/chats/${encodeURIComponent(chatId)}/messages`);
       setMessages(await res.json());
     } catch (e) {}
   };
@@ -126,7 +126,7 @@ export default function Dashboard() {
     setSelectedChat(chat);
     setIsRightSidebarOpen(true);
     if (chat.unread_count > 0) {
-      await apiFetch(`/api/chats/${chat.id}/read`, { method: 'PUT' });
+      await apiFetch(`/api/chats/${encodeURIComponent(chat.id)}/read`, { method: 'PUT' });
       setChats(prev => (Array.isArray(prev) ? prev : []).map(c => c.id === chat.id ? { ...c, unread_count: 0 } : c));
     }
     loadMessages(chat.id);
@@ -134,7 +134,7 @@ export default function Dashboard() {
 
   const handleDeleteChat = async (chatId: string) => {
     if (window.confirm('Excluir conversa?')) {
-      await apiFetch(`/api/chats/${chatId}`, { method: 'DELETE' });
+      await apiFetch(`/api/chats/${encodeURIComponent(chatId)}`, { method: 'DELETE' });
       if (selectedChat?.id === chatId) setSelectedChat(null);
       fetchData();
     }
@@ -144,7 +144,7 @@ export default function Dashboard() {
     e.preventDefault();
     if (!newMessage.trim() || !selectedChat) return;
     try {
-      await apiFetch(`/api/chats/${selectedChat.id}/messages`, {
+      await apiFetch(`/api/chats/${encodeURIComponent(selectedChat.id)}/messages`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body: newMessage })
       });
       setNewMessage('');
@@ -158,7 +158,7 @@ export default function Dashboard() {
     formData.append('media', file);
     if (newMessage.trim()) formData.append('body', newMessage);
     try {
-      await apiFetch(`/api/chats/${selectedChat.id}/messages`, { method: 'POST', body: formData });
+      await apiFetch(`/api/chats/${encodeURIComponent(selectedChat.id)}/messages`, { method: 'POST', body: formData });
       setNewMessage('');
     } catch (e) {} finally { setUploadingMedia(false); }
   };
@@ -222,7 +222,7 @@ export default function Dashboard() {
   });
 
   return (
-    <div className="flex flex-col h-full absolute inset-0 -top-6 -left-6 -right-6 min-w-0 bg-[#f3f4f6]">
+    <div className="flex flex-col h-[calc(100vh-120px)] bg-[#f3f4f6] rounded-xl overflow-hidden border border-gray-200 shadow-sm relative">
       {/* Top Bar for Search and Tags (To save lateral space) */}
       <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center bg-white p-4 border-b border-gray-200 z-10 shadow-sm shrink-0">
         <div className="flex gap-4 items-center flex-1 max-w-xl">
@@ -236,12 +236,25 @@ export default function Dashboard() {
         </div>
         <div className="flex items-center gap-3">
           <button 
-            onClick={async () => {
-                const res = await apiFetch('/api/wa/sync', { method: 'POST' });
-                if (res.ok) alert('Conversas sincronizadas!');
-                else alert('Erro ao sincronizar. Verifique se o WhatsApp está conectado.');
+            onClick={async (e) => {
+                const btn = e.currentTarget;
+                btn.disabled = true;
+                const icon = btn.querySelector('svg');
+                if(icon) icon.classList.add('animate-spin');
+                try {
+                    const res = await apiFetch('/api/wa/sync', { method: 'POST' });
+                    if (res.ok) {
+                        alert('Conversas sincronizadas!');
+                        fetchData();
+                    } else {
+                        alert('Erro ao sincronizar. Verifique se o WhatsApp está conectado.');
+                    }
+                } finally {
+                    btn.disabled = false;
+                    if(icon) icon.classList.remove('animate-spin');
+                }
             }}
-            className="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 transition-colors shadow-sm"
+            className="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 transition-colors shadow-sm disabled:opacity-50"
           >
             <RefreshCw size={16} /> Sincronizar WhatsApp
           </button>

@@ -13,6 +13,8 @@ import Settings from './components/Settings';
 import Send from './components/Send'; 
 import Login from './components/Login';
 import Copilot from './components/Copilot';
+import MediaGallery from './components/MediaGallery';
+import AIKnowledge from './components/AIKnowledge';
 import { DEFAULT_USER_SETTINGS, MOCK_DOCUMENTS } from './constants';
 import { UserSettings, Document, UploadedFile } from './types';
 import { api } from './services/api';
@@ -53,7 +55,7 @@ const App: React.FC = () => {
   }, [isAuthenticated]);
 
   const handleLoginSuccess = (token?: string, remember?: boolean) => {
-      if (remember && token) {
+      if (token) {
           localStorage.setItem('cm_auth_token', token);
       }
       setIsAuthenticated(true);
@@ -182,6 +184,10 @@ const App: React.FC = () => {
         return <BulkSend />;
       case 'scheduled':
         return <ScheduledMessages />;
+      case 'gallery':
+        return <MediaGallery />;
+      case 'ai_memory':
+        return <AIKnowledge />;
       case 'settings':
         return <Settings settings={userSettings} onSave={setUserSettings} />;
       default:
