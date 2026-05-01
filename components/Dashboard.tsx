@@ -63,9 +63,10 @@ export default function Dashboard() {
   useEffect(() => { scrollToBottom('auto'); }, [messages, selectedChat?.id]);
 
   const apiFetch = async (url: string, options: RequestInit = {}) => {
-    const token = localStorage.getItem('cm_auth_token') || 'admin';
+    const rawToken = localStorage.getItem('cm_auth_token') || 'admin';
+    const token = rawToken.startsWith('session-') ? rawToken : `session-123-${rawToken}`;
     const headers = new Headers(options.headers || {});
-    if (token) headers.set('Authorization', `Bearer ${token}`);
+    headers.set('Authorization', `Bearer ${token}`);
     const res = await fetch(url, { ...options, headers });
     return res;
   };

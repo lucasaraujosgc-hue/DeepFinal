@@ -16,6 +16,7 @@ import multer from 'multer';
 import nodemailer from 'nodemailer';
 import { ImapFlow } from 'imapflow';
 import { GoogleGenAI, Type } from "@google/genai";
+import { createServer as createViteServer } from 'vite';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1307,7 +1308,7 @@ app.post('/api/send-documents', async (req, res) => {
 
             for (const doc of companyDocs) {
                 if (doc.category) { 
-                    db.run(`INSERT INTO sent_logs (companyName, docName, category, sentAt, channels, status) VALUES (?, ?, ?, datetime('now', 'localtime'), ?, 'success')`, 
+                    db.run(`INSERT INTO sent_logs (companyName, docName, category, sentAt, channels, status) VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, 'success')`, 
                         [company.name, doc.docName, doc.category, JSON.stringify(channels)]);
                     
                     db.run(`INSERT INTO document_status (companyId, category, competence, status) VALUES (?, ?, ?, 'sent') ON CONFLICT(companyId, category, competence) DO UPDATE SET status='sent'`, 
@@ -1428,6 +1429,9 @@ app.get('/api/chats', (req, res) => {
         }
         const out = (rows || []).map(r => ({ 
             ...r, 
+            last_message_time: Number(r.last_message_time || 0),
+            unread_count: Number(r.unread_count || 0),
+            last_message_from_me: Number(r.last_message_from_me || 0),
             tag_ids: r.tag_ids ? r.tag_ids.split(',') : [] 
         }));
         res.json(out);
@@ -1460,7 +1464,17 @@ app.delete('/api/tags/:id', (req, res) => { getDb(req.user).run("DELETE FROM cha
 app.post('/api/chats/:id/tags', (req, res) => getDb(req.user).run("INSERT INTO chat_tags (chat_id, tag_id) VALUES (?, ?) ON CONFLICT DO NOTHING", [req.params.id, req.body.tag_id], () => { io.emit('chat_tags_updated'); res.json({success:true}); }));
 app.delete('/api/chats/:id/tags/:tag_id', (req, res) => getDb(req.user).run("DELETE FROM chat_tags WHERE chat_id = ? AND tag_id = ?", [req.params.id, req.params.tag_id], () => { io.emit('chat_tags_updated'); res.json({success:true});}));
 
-app.get('/api/chats/:id/messages', (req, res) => getDb(req.user).all("SELECT * FROM messages WHERE chat_id = ? ORDER BY timestamp ASC", [req.params.id], (err, rows) => res.json(rows||[])));
+app.get('/api/chats/:id/messages', (req, res) => {
+    getDb(req.user).all("SELECT * FROM messages WHERE chat_id = ? ORDER BY timestamp ASC", [req.params.id], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        const out = (rows || []).map(m => ({
+            ...m,
+            timestamp: Number(m.timestamp || 0),
+            from_me: Number(m.from_me || 0)
+        }));
+        res.json(out);
+    });
+});
 app.post('/api/chats/:id/messages', upload.single('media'), async (req, res) => {
     const { body } = req.body;
     const chatId = req.params.id;
@@ -1684,7 +1698,7 @@ setInterval(() => {
                             if (companySpecificDocs.length > 0) {
                                 for (const doc of companySpecificDocs) {
                                     if (doc.category) {
-                                        db.run(`INSERT INTO sent_logs (companyName, docName, category, sentAt, channels, status) VALUES (?, ?, ?, datetime('now', 'localtime'), ?, 'success')`, 
+                                        db.run(`INSERT INTO sent_logs (companyName, docName, category, sentAt, channels, status) VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, 'success')`, 
                                             [company.name, doc.docName, doc.category, JSON.stringify(channels)]);
                                         
                                         db.run(`INSERT INTO document_status (companyId, category, competence, status) VALUES (?, ?, ?, 'sent') ON CONFLICT(companyId, category, competence) DO UPDATE SET status='sent'`, 
@@ -1716,5 +1730,23 @@ setInterval(() => {
         });
     });
 }, 60000); 
+
+// --- VITE MIDDLEWARE ---
+async function setupVite(app) {
+    if (process.env.NODE_ENV !== 'production') {
+        const vite = await createViteServer({
+            server: { middlewareMode: true },
+            appType: 'spa',
+        });
+        app.use(vite.middlewares);
+        log("Vite middleware active.");
+    } else {
+        app.use(express.static(path.join(__dirname, 'dist')));
+        app.get('*', (req, res) => {
+            res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+        });
+    }
+}
+setupVite(app);
 
 server.listen(port, () => log(`Server running at http://localhost:${port}`));
