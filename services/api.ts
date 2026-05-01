@@ -160,17 +160,22 @@ export const api = {
 
   // WhatsApp
   getWhatsAppStatus: async (): Promise<{ status: string; qr: string | null; info?: any }> => {
-    const res = await fetch(`${API_URL}/whatsapp/status`, { headers: getAuthHeader() });
+    const res = await fetch(`${API_URL}/wa/status`, { headers: getAuthHeader() });
     return handleResponse(res);
   },
 
   disconnectWhatsApp: async (): Promise<void> => {
-    const res = await fetch(`${API_URL}/whatsapp/disconnect`, { method: 'POST', headers: getAuthHeader() });
+    const res = await fetch(`${API_URL}/wa/reset`, { method: 'POST', headers: getAuthHeader() });
     return handleResponse(res);
   },
 
   resetWhatsAppSession: async (): Promise<void> => {
-    const res = await fetch(`${API_URL}/whatsapp/reset`, { method: 'POST', headers: getAuthHeader() });
+    const res = await fetch(`${API_URL}/wa/reset`, { method: 'POST', headers: getAuthHeader() });
+    return handleResponse(res);
+  },
+
+  restartWhatsApp: async (): Promise<void> => {
+    const res = await fetch(`${API_URL}/wa/restart`, { method: 'POST', headers: getAuthHeader() });
     return handleResponse(res);
   },
 

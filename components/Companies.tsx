@@ -261,7 +261,10 @@ const Companies: React.FC = () => {
                         {copiedId === company.id ? 'Copiado!' : 'Copiar'}
                      </button>
                   </td>
-                  <td className="px-6 py-4 font-mono text-gray-600">{company.docNumber}</td>
+                  <td className="px-6 py-4">
+                    <span className="text-[10px] font-bold text-gray-400 block uppercase mb-1">{company.type || 'DOC'}:</span>
+                    <span className="font-mono text-gray-700 bg-gray-50 px-2 py-0.5 rounded border border-gray-100">{company.docNumber}</span>
+                  </td>
                    <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded bg-blue-100 text-blue-600 flex items-center justify-center">

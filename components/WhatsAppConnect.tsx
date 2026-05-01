@@ -3,7 +3,7 @@ import { Smartphone, RefreshCw, CheckCircle2, Loader2, Power, QrCode, Trash2, Al
 import { api } from '../services/api';
 
 const WhatsAppConnect: React.FC = () => {
-  const [status, setStatus] = useState<'disconnected' | 'generating_qr' | 'ready' | 'connected'>('disconnected');
+  const [status, setStatus] = useState<'disconnected' | 'generating_qr' | 'qr' | 'ready' | 'connected' | 'error'>('disconnected');
   const [qrCodeBase64, setQrCodeBase64] = useState<string | null>(null);
   const [sessionInfo, setSessionInfo] = useState<any>(null);
   const [isResetting, setIsResetting] = useState(false);
@@ -11,16 +11,12 @@ const WhatsAppConnect: React.FC = () => {
   const fetchStatus = async () => {
       try {
           const data = await api.getWhatsAppStatus();
+          setStatus(data.status as any);
           if (data.status === 'connected') {
-              setStatus('connected');
               setSessionInfo(data.info || { name: 'Sessão Ativa', device: 'WhatsApp Web' });
               setQrCodeBase64(null);
           } else if (data.qr) {
-              setStatus('ready');
               setQrCodeBase64(data.qr);
-          } else {
-              // Disconnected but no QR yet (maybe generating)
-              if (status !== 'generating_qr') setStatus('disconnected');
           }
       } catch (e) {
           console.error('Failed to fetch WA status', e);
@@ -87,7 +83,7 @@ const WhatsAppConnect: React.FC = () => {
               </div>
           )}
 
-          {(status === 'ready' || status === 'generating_qr') && qrCodeBase64 && (
+          {(status === 'ready' || status === 'qr' || status === 'generating_qr') && qrCodeBase64 && (
               <div className="space-y-6 animate-in zoom-in-95 duration-300">
                   <div className="border-4 border-gray-800 rounded-xl p-2 inline-block bg-white relative group">
                       <img src={qrCodeBase64} alt="Scan Me" className="w-64 h-64 object-contain" />

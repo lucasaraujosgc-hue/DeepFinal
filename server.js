@@ -200,6 +200,13 @@ const getDb = (username) => {
 const initPostgres = async () => {
     try {
         await pool.query(`CREATE TABLE IF NOT EXISTS companies (id SERIAL PRIMARY KEY, name TEXT NOT NULL, docNumber TEXT, type TEXT, email TEXT, whatsapp TEXT)`);
+        
+        // Ensure docNumber column exists (migration)
+        try {
+            await pool.query(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS "docNumber" TEXT`);
+        } catch (e) {
+            log("Erro ao adicionar coluna docNumber (pode já existir)", e);
+        }
         await pool.query(`CREATE TABLE IF NOT EXISTS tasks (id SERIAL PRIMARY KEY, title TEXT NOT NULL, description TEXT, status TEXT, priority TEXT, color TEXT, dueDate TEXT, companyId INTEGER, recurrence TEXT, dayOfWeek TEXT, recurrenceDate TEXT, targetCompanyType TEXT, createdAt TEXT)`);
         await pool.query(`CREATE TABLE IF NOT EXISTS document_status (id SERIAL PRIMARY KEY, companyId INTEGER, category TEXT, competence TEXT, status TEXT, UNIQUE(companyId, category, competence))`);
         await pool.query(`CREATE TABLE IF NOT EXISTS sent_logs (id SERIAL PRIMARY KEY, companyName TEXT, docName TEXT, category TEXT, sentAt TEXT, channels TEXT, status TEXT)`);
@@ -1108,6 +1115,43 @@ app.post('/api/wa/restart', async (req, res) => {
 });
 
 
+app.post('/api/wa/sync', async (req, res) => {
+    try {
+        const username = req.user;
+        const waWrapper = getWaClientWrapper(username);
+        if (waWrapper.status !== 'connected') return res.status(400).json({ error: 'WhatsApp not connected' });
+        
+        const chats = await waWrapper.client.getChats();
+        const db = getDb(username);
+        
+        for (const chat of chats) {
+            if (chat.isGroup) continue;
+            const chatId = chat.id._serialized;
+            const contact = await chat.getContact();
+            const name = contact.name || contact.pushname || contact.number;
+            const phone = contact.number;
+            const lastMsg = chat.lastMessage ? chat.lastMessage.body : '';
+            const lastTime = chat.lastMessage ? chat.lastMessage.timestamp * 1000 : Date.now();
+            
+            await new Promise((resolve) => {
+                db.get("SELECT id FROM chats WHERE id = ?", [chatId], (err, row) => {
+                    if (!row) {
+                        db.get("SELECT id FROM columns ORDER BY position ASC LIMIT 1", (err, colRow) => {
+                            const colId = colRow ? colRow.id : 'col-1';
+                            db.run("INSERT INTO chats (id, name, phone, column_id, last_message, last_message_time, unread_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                [chatId, name, phone, colId, lastMsg, lastTime, chat.unreadCount], resolve);
+                        });
+                    } else {
+                        resolve(null);
+                    }
+                });
+            });
+        }
+        io.emit('chat_updated');
+        res.json({ success: true, count: chats.length });
+    } catch(e) { log('Sync error', e); res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/send-documents', async (req, res) => {
     const { documents, subject, messageBody, channels, emailSignature, whatsappTemplate } = req.body;
     
@@ -1334,7 +1378,15 @@ Retorne texto útil se não for comando.`;
     }
 });
 
-app.get('/api/columns', (req, res) => getDb(req.user).all("SELECT * FROM columns ORDER BY position ASC", (err, rows) => res.json(rows || [])));
+app.get('/api/columns', (req, res) => {
+    getDb(req.user).all("SELECT * FROM columns ORDER BY position ASC", (err, rows) => {
+        if (err) {
+            log(`[API columns] Erro ao buscar colunas`, err);
+            return res.status(500).json({ error: err.message });
+        }
+        res.json(rows || []);
+    });
+});
 app.post('/api/columns', (req, res) => getDb(req.user).run("INSERT INTO columns (id, name, position, color) VALUES (?, ?, ?, ?)", [req.body.id, req.body.name, req.body.position, req.body.color || '#e2e8f0'], () => { io.emit('columns_updated'); res.json({success:true}); }));
 app.put('/api/columns/:id', (req, res) => getDb(req.user).run("UPDATE columns SET name = ?, position = ?, color = ? WHERE id = ?", [req.body.name, req.body.position, req.body.color, req.params.id], () => { io.emit('columns_updated'); res.json({success:true}); }));
 app.delete('/api/columns/:id', (req, res) => {
@@ -1349,8 +1401,22 @@ app.delete('/api/columns/:id', (req, res) => {
 });
 
 app.get('/api/chats', (req, res) => {
-    getDb(req.user).all("SELECT c.*, (SELECT string_agg(t.tag_id, ',') FROM chat_tags t WHERE t.chat_id = c.id) as tag_ids FROM chats c ORDER BY c.last_message_time DESC", (err, rows) => {
-        const out = (rows||[]).map(r => ({ ...r, tag_ids: r.tag_ids ? r.tag_ids.split(',') : [] }));
+    const db = getDb(req.user);
+    const sql = `
+        SELECT c.*, 
+        (SELECT STRING_AGG(t.tag_id, ',') FROM chat_tags t WHERE t.chat_id = c.id) as tag_ids 
+        FROM chats c 
+        ORDER BY c.last_message_time DESC
+    `;
+    db.all(sql, (err, rows) => {
+        if (err) {
+            log(`[API chats] Erro ao buscar chats`, err);
+            return res.status(500).json({ error: err.message });
+        }
+        const out = (rows || []).map(r => ({ 
+            ...r, 
+            tag_ids: r.tag_ids ? r.tag_ids.split(',') : [] 
+        }));
         res.json(out);
     });
 });
@@ -1366,7 +1432,15 @@ app.delete('/api/chats/:id', (req, res) => {
     });
 });
 
-app.get('/api/tags', (req, res) => getDb(req.user).all("SELECT * FROM tags", (err, rows) => res.json(rows||[])));
+app.get('/api/tags', (req, res) => {
+    getDb(req.user).all("SELECT * FROM tags", (err, rows) => {
+        if (err) {
+            log(`[API tags] Erro ao buscar tags`, err);
+            return res.status(500).json({ error: err.message });
+        }
+        res.json(rows || []);
+    });
+});
 app.post('/api/tags', (req, res) => getDb(req.user).run("INSERT INTO tags (id, name, color) VALUES (?, ?, ?)", [req.body.id, req.body.name, req.body.color], () => { io.emit('tags_updated'); res.json({success:true});}));
 app.put('/api/tags/:id', (req, res) => getDb(req.user).run("UPDATE tags SET name=?, color=? WHERE id=?", [req.body.name, req.body.color, req.params.id], () => { io.emit('tags_updated'); res.json({success:true});}));
 app.delete('/api/tags/:id', (req, res) => { getDb(req.user).run("DELETE FROM chat_tags WHERE tag_id = ?", [req.params.id], () => { getDb(req.user).run("DELETE FROM tags WHERE id = ?", [req.params.id], () => { io.emit('tags_updated'); res.json({success:true}); }); }); });

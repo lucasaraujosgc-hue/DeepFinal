@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { io } from 'socket.io-client';
-import { MessageCircle, Menu, X, Edit2, CheckCheck, Plus, Trash2, ImageIcon, Download, HardDrive } from 'lucide-react';
+import { MessageCircle, Menu, X, Edit2, CheckCheck, Plus, Trash2, ImageIcon, Download, HardDrive, RefreshCw } from 'lucide-react';
 import { Column, Chat, Tag, Message } from '../types';
 import { format, isSameDay, isToday, isYesterday } from 'date-fns';
 
@@ -234,7 +234,18 @@ export default function Dashboard() {
             className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-blue-500 shadow-inner bg-gray-50"
           />
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={async () => {
+                const res = await apiFetch('/api/wa/sync', { method: 'POST' });
+                if (res.ok) alert('Conversas sincronizadas!');
+                else alert('Erro ao sincronizar. Verifique se o WhatsApp está conectado.');
+            }}
+            className="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 transition-colors shadow-sm"
+          >
+            <RefreshCw size={16} /> Sincronizar WhatsApp
+          </button>
+          <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider mr-2">Tags:</span>
           {(tags || []).map(tag => {
             const isSelected = selectedTagFilters.includes(tag.id);
@@ -263,6 +274,7 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+    </div>
 
       <div className="flex-1 flex overflow-hidden">
         {/* Kanban Board */}
