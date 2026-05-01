@@ -65,7 +65,7 @@ export default function Dashboard() {
   const apiFetch = async (url: string, options: RequestInit = {}) => {
     const token = localStorage.getItem('cm_auth_token') || 'admin';
     const headers = new Headers(options.headers || {});
-    if (token) headers.set('Authorization', `Bearer session-123-${token}`);
+    if (token) headers.set('Authorization', `Bearer ${token}`);
     const res = await fetch(url, { ...options, headers });
     return res;
   };

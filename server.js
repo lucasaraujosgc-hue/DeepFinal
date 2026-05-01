@@ -982,7 +982,8 @@ app.get('/api/companies', (req, res) => {
     if (!db) return res.status(500).json({ error: 'Database error' });
     db.all('SELECT * FROM companies ORDER BY name ASC', (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
-        res.json(rows || []);
+        const mappedRows = (rows || []).map(r => ({ ...r, docNumber: r.docnumber || r.docNumber || r['"docNumber"'] }));
+        res.json(mappedRows);
     }); 
 });
 
@@ -992,15 +993,15 @@ app.post('/api/companies', (req, res) => {
     if (!db) return res.status(500).json({ error: 'Database error' });
 
     if (id) {
-        db.run(`UPDATE companies SET name=?, docNumber=?, type=?, email=?, whatsapp=? WHERE id=?`, 
-            [name, docNumber, type, email, whatsapp, id], 
+        db.run(`UPDATE companies SET name=?, docnumber=?, "docNumber"=?, type=?, email=?, whatsapp=? WHERE id=?`, 
+            [name, docNumber, docNumber, type, email, whatsapp, id], 
             function(err) { 
                 if (err) return res.status(500).json({ error: err.message });
                 res.json({success: true, id});
             });
     } else {
-        db.run(`INSERT INTO companies (name, docNumber, type, email, whatsapp) VALUES (?, ?, ?, ?, ?)`, 
-            [name, docNumber, type, email, whatsapp], 
+        db.run(`INSERT INTO companies (name, docnumber, "docNumber", type, email, whatsapp) VALUES (?, ?, ?, ?, ?, ?)`, 
+            [name, docNumber, docNumber, type, email, whatsapp], 
             function(err) { 
                 if (err) return res.status(500).json({ error: err.message });
                 res.json({success: true, id: this.lastID});
