@@ -217,6 +217,27 @@ export default function Dashboard() {
     }
   };
 
+  const handleTagAction = async (tag: Tag, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const action = window.prompt(`Tag: ${tag.name}\nDigite 'E' para Editar ou 'D' para Excluir:`);
+    if (action === null) return;
+    if (action.toUpperCase() === 'D') {
+      if (window.confirm(`Tem certeza que deseja excluir '${tag.name}' globalmente?`)) {
+        await apiFetch(`/api/tags/${encodeURIComponent(tag.id)}`, { method: 'DELETE' });
+      }
+    } else if (action.toUpperCase() === 'E') {
+      const newName = window.prompt('Novo nome:', tag.name);
+      const newColor = window.prompt('Nova cor (Hex):', tag.color) || tag.color;
+      if (newName) {
+        await apiFetch(`/api/tags/${encodeURIComponent(tag.id)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: newName, color: newColor })
+        });
+      }
+    }
+  };
+
   const handleAddTag = async () => {
     if (!newTagName.trim()) return;
     await apiFetch('/api/tags', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: 'tag-' + Date.now(), name: newTagName, color: newTagColor }) });
@@ -274,14 +295,18 @@ export default function Dashboard() {
           {(tags || []).map(tag => {
             const isSelected = selectedTagFilters.includes(tag.id);
             return (
-              <button
-                key={tag.id}
-                onClick={() => setSelectedTagFilters(prev => isSelected ? prev.filter(id => id !== tag.id) : [...prev, tag.id])}
-                className={`text-xs px-3 py-1.5 rounded-full border flex items-center gap-1.5 shadow-sm transition-all ${isSelected ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
-              >
-                <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: tag.color }}></div>
-                {tag.name}
-              </button>
+              <div key={tag.id} className={`group flex items-center text-xs px-1 pr-1 py-1.5 rounded-full border shadow-sm transition-all cursor-pointer ${isSelected ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
+                <button
+                  onClick={() => setSelectedTagFilters(prev => isSelected ? prev.filter(id => id !== tag.id) : [...prev, tag.id])}
+                  className={`flex items-center gap-1.5 pl-2 pr-1 focus:outline-none`}
+                >
+                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: tag.color }}></div>
+                  {tag.name}
+                </button>
+                <button onClick={(e) => handleTagAction(tag, e)} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600 transition-opacity ml-1 pr-2">
+                   <Edit2 size={12} />
+                </button>
+              </div>
             );
           })}
           {isAddingTag ? (
