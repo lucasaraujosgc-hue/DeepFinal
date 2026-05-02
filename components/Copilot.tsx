@@ -111,8 +111,8 @@ export default function Copilot({ token }: CopilotProps) {
               messages.map(msg => (
                 <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} z-10 relative pointer-events-auto`}>
                   <div className={`max-w-[85%] p-3 rounded-2xl text-sm shadow-sm ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-tr-sm' : 'bg-white border text-gray-700 rounded-tl-sm'}`}>
-                    <div className="markdown-body prose prose-sm break-words overflow-hidden">
-                      <ReactMarkdown components={{ p: ({node, ...props}) => <span {...props} /> }}>{msg.content}</ReactMarkdown>
+                    <div className={`markdown-body prose prose-sm break-words overflow-hidden ${msg.role === 'user' ? 'text-white' : ''} [&>p]:m-0 [&>p]:inline`}>
+                      <ReactMarkdown>{msg.content}</ReactMarkdown>
                     </div>
                   </div>
                 </div>

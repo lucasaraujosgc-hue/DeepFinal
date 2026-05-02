@@ -36,7 +36,7 @@ export default function Dashboard() {
   const [newTagColor, setNewTagColor] = useState('#3b82f6');
   
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
-  const [chatPanelWidth, setChatPanelWidth] = useState<number>(384);
+  const [chatPanelWidth, setChatPanelWidth] = useState<number>(330);
   const isResizingRef = useRef(false);
 
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);

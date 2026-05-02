@@ -200,6 +200,10 @@ const App: React.FC = () => {
     }
   };
 
+  const userName = userSettings?.emailSignature?.split('\n')[0] || 'Nome do Usuário';
+  const userRole = userSettings?.emailSignature?.split('\n')[1] || 'Função do Usuário';
+  const userInitials = userName.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase() || 'U';
+
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
       <Sidebar 
@@ -217,11 +221,11 @@ const App: React.FC = () => {
             </h2>
             <div className="flex items-center gap-4">
                <div className="text-sm text-right hidden sm:block">
-                  <p className="font-bold text-gray-700">Lucas Araújo</p>
-                  <p className="text-gray-500 text-xs">Contador | CRC-BA 046968/O</p>
+                  <p className="font-bold text-gray-700">{userName}</p>
+                  <p className="text-gray-500 text-xs">{userRole}</p>
                </div>
                <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 font-bold border-2 border-white shadow-sm">
-                  LA
+                  {userInitials}
                </div>
             </div>
           </header>

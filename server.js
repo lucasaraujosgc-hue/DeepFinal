@@ -155,38 +155,28 @@ const safeSendMessage = async (client, chatId, content, options = {}) => {
 };
 
 // --- MULTI-TENANCY: Database Management ---
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL
-});
+const sqlite3 = require('sqlite3').verbose();
 
-const sqliteToPgSql = (sql) => {
-   let count = 1;
-   return sql.replace(/\?/g, () => '$' + (count++));
-};
+// Initialize SQLite database
+const dbPath = path.join(DATA_DIR, 'database_admin.sqlite');
+const sdb = new sqlite3.Database(dbPath);
 
 const pgDb = {
   all: (sql, params = [], callback) => {
       if (typeof params === 'function') { callback = params; params = []; }
-      pool.query(sqliteToPgSql(sql), params, (err, res) => {
-          callback(err, res ? res.rows : null);
-      });
+      sdb.all(sql, params, callback);
   },
   get: (sql, params = [], callback) => {
       if (typeof params === 'function') { callback = params; params = []; }
-      pool.query(sqliteToPgSql(sql), params, (err, res) => {
-          callback(err, res && res.rows.length > 0 ? res.rows[0] : null);
-      });
+      sdb.get(sql, params, callback);
   },
   run: function(sql, params = [], callback) {
       if (typeof params === 'function') { callback = params; params = []; }
-      let finalSql = sqliteToPgSql(sql);
-      if (finalSql.trim().toUpperCase().startsWith('INSERT') && !finalSql.toUpperCase().includes('RETURNING')) {
-          finalSql += ' RETURNING *';
-      }
-      pool.query(finalSql, params, (err, res) => {
+      const cleanSql = sql.replace(/\s+RETURNING\s+\*/i, '');
+      sdb.run(cleanSql, params, function(err) {
           const context = {
-             lastID: res?.rows?.[0]?.id || null,
-             changes: res?.rowCount || 0
+             lastID: this ? this.lastID : null,
+             changes: this ? this.changes : 0
           };
           if (callback) callback.call(context, err);
       });
@@ -197,41 +187,48 @@ const getDb = (username) => {
     return pgDb; 
 };
 
-// --- INITIALIZE TABLES (POSTGRES SYNTAX) ---
-const initDatabase = async () => {
-    try {
-        await pool.query(`CREATE TABLE IF NOT EXISTS companies (id SERIAL PRIMARY KEY, name TEXT NOT NULL, docNumber TEXT, type TEXT, email TEXT, whatsapp TEXT)`);
+// --- INITIALIZE TABLES (SQLITE SYNTAX) ---
+const initDatabase = () => {
+    sdb.serialize(() => {
+        sdb.run(`CREATE TABLE IF NOT EXISTS companies (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, docNumber TEXT, type TEXT, email TEXT, whatsapp TEXT)`);
         
-        // Ensure docNumber column exists (migration)
-        try {
-            await pool.query(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS "docNumber" TEXT`);
-        } catch (e) {
-            log("Erro ao adicionar coluna docNumber (pode já existir)", e);
-        }
-        await pool.query(`CREATE TABLE IF NOT EXISTS tasks (id SERIAL PRIMARY KEY, title TEXT NOT NULL, description TEXT, status TEXT, priority TEXT, color TEXT, dueDate TEXT, companyId INTEGER, recurrence TEXT, dayOfWeek TEXT, recurrenceDate TEXT, targetCompanyType TEXT, createdAt TEXT)`);
-        await pool.query(`CREATE TABLE IF NOT EXISTS document_status (id SERIAL PRIMARY KEY, companyId INTEGER, category TEXT, competence TEXT, status TEXT, UNIQUE(companyId, category, competence))`);
-        await pool.query(`CREATE TABLE IF NOT EXISTS sent_logs (id SERIAL PRIMARY KEY, companyName TEXT, docName TEXT, category TEXT, sentAt TEXT, channels TEXT, status TEXT)`);
-        await pool.query(`CREATE TABLE IF NOT EXISTS user_settings (id INTEGER PRIMARY KEY CHECK (id = 1), settings TEXT)`);
-        await pool.query(`CREATE TABLE IF NOT EXISTS scheduled_messages (id SERIAL PRIMARY KEY, title TEXT, message TEXT, nextRun TEXT, recurrence TEXT, active INTEGER, type TEXT, channels TEXT, targetType TEXT, selectedCompanyIds TEXT, attachmentFilename TEXT, attachmentOriginalName TEXT, documentsPayload TEXT, createdBy TEXT)`);
-        await pool.query(`CREATE TABLE IF NOT EXISTS personal_notes (id SERIAL PRIMARY KEY, topic TEXT, content TEXT, created_at TEXT, updated_at TEXT)`);
+        // Add docNumber if not exists via pragma
+        sdb.all("PRAGMA table_info(companies)", (err, columns) => {
+            if (!err && columns && !columns.some(c => c.name === 'docNumber')) {
+                sdb.run(`ALTER TABLE companies ADD COLUMN docNumber TEXT`, (e) => {
+                    if (e) log("Erro ao adicionar docNumber", e);
+                });
+            }
+        });
+        
+        sdb.run(`CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, description TEXT, status TEXT, priority TEXT, color TEXT, dueDate TEXT, companyId INTEGER, recurrence TEXT, dayOfWeek TEXT, recurrenceDate TEXT, targetCompanyType TEXT, createdAt TEXT)`);
+        sdb.run(`CREATE TABLE IF NOT EXISTS document_status (id INTEGER PRIMARY KEY AUTOINCREMENT, companyId INTEGER, category TEXT, competence TEXT, status TEXT, UNIQUE(companyId, category, competence))`);
+        sdb.run(`CREATE TABLE IF NOT EXISTS sent_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, companyName TEXT, docName TEXT, category TEXT, sentAt TEXT, channels TEXT, status TEXT)`);
+        sdb.run(`CREATE TABLE IF NOT EXISTS user_settings (id INTEGER PRIMARY KEY CHECK (id = 1), settings TEXT)`);
+        sdb.run(`CREATE TABLE IF NOT EXISTS scheduled_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, message TEXT, nextRun TEXT, recurrence TEXT, active INTEGER, type TEXT, channels TEXT, targetType TEXT, selectedCompanyIds TEXT, attachmentFilename TEXT, attachmentOriginalName TEXT, documentsPayload TEXT, createdBy TEXT)`);
+        sdb.run(`CREATE TABLE IF NOT EXISTS personal_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, topic TEXT, content TEXT, created_at TEXT, updated_at TEXT)`);
 
         // Kanban / WhatsApp AI tables
-        await pool.query(`CREATE TABLE IF NOT EXISTS columns (id TEXT PRIMARY KEY, name TEXT NOT NULL, position INTEGER NOT NULL, color TEXT DEFAULT '#e2e8f0')`);
-        await pool.query(`CREATE TABLE IF NOT EXISTS chats (id TEXT PRIMARY KEY, name TEXT, phone TEXT, column_id TEXT, last_message TEXT, last_message_time BIGINT, unread_count INTEGER DEFAULT 0, profile_pic TEXT, last_message_from_me INTEGER DEFAULT 0)`);
-        await pool.query(`CREATE TABLE IF NOT EXISTS tags (id TEXT PRIMARY KEY, name TEXT NOT NULL, color TEXT NOT NULL)`);
-        await pool.query(`CREATE TABLE IF NOT EXISTS chat_tags (chat_id TEXT, tag_id TEXT, PRIMARY KEY (chat_id, tag_id))`);
-        await pool.query(`CREATE TABLE IF NOT EXISTS ai_memory (id SERIAL PRIMARY KEY, content TEXT, created_at BIGINT, trigger_at BIGINT, is_triggered INTEGER DEFAULT 0)`);
-        await pool.query(`CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, chat_id TEXT NOT NULL, body TEXT, from_me INTEGER, timestamp BIGINT, media_url TEXT, media_type TEXT, media_name TEXT, transcription TEXT)`);
-        await pool.query(`CREATE TABLE IF NOT EXISTS ai_scheduled_messages (id SERIAL PRIMARY KEY, phone TEXT, message TEXT, trigger_at BIGINT, is_triggered INTEGER DEFAULT 0, created_at BIGINT)`);
+        sdb.run(`CREATE TABLE IF NOT EXISTS columns (id TEXT PRIMARY KEY, name TEXT NOT NULL, position INTEGER NOT NULL, color TEXT DEFAULT '#e2e8f0')`);
+        sdb.run(`CREATE TABLE IF NOT EXISTS chats (id TEXT PRIMARY KEY, name TEXT, phone TEXT, column_id TEXT, last_message TEXT, last_message_time INTEGER, unread_count INTEGER DEFAULT 0, profile_pic TEXT, last_message_from_me INTEGER DEFAULT 0)`);
+        sdb.run(`CREATE TABLE IF NOT EXISTS tags (id TEXT PRIMARY KEY, name TEXT NOT NULL, color TEXT NOT NULL)`);
+        sdb.run(`CREATE TABLE IF NOT EXISTS chat_tags (chat_id TEXT, tag_id TEXT, PRIMARY KEY (chat_id, tag_id))`);
+        sdb.run(`CREATE TABLE IF NOT EXISTS ai_memory (id INTEGER PRIMARY KEY AUTOINCREMENT, content TEXT, created_at INTEGER, trigger_at INTEGER, is_triggered INTEGER DEFAULT 0)`);
+        sdb.run(`CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, chat_id TEXT NOT NULL, body TEXT, from_me INTEGER, timestamp INTEGER, media_url TEXT, media_type TEXT, media_name TEXT, transcription TEXT)`);
+        sdb.run(`CREATE TABLE IF NOT EXISTS ai_scheduled_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT, message TEXT, trigger_at INTEGER, is_triggered INTEGER DEFAULT 0, created_at INTEGER)`);
 
         // Columns default
-        const cols = await pool.query("SELECT COUNT(*) FROM columns");
-        if (cols.rows[0].count == 0) {
-            await pool.query("INSERT INTO columns (id, name, position) VALUES ('col-1', 'Novos', 0), ('col-2', 'Em Atendimento', 1), ('col-3', 'Aguardando Cliente', 2), ('col-4', 'Finalizados', 3)");
-        }
-    } catch (e) {
-        log("Erro init postgres", e);
-    }
+        sdb.get("SELECT COUNT(*) as count FROM columns", (err, row) => {
+            if (row && row.count == 0) {
+                const stmt = sdb.prepare("INSERT INTO columns (id, name, position) VALUES (?, ?, ?)");
+                stmt.run('col-1', 'Novos', 0);
+                stmt.run('col-2', 'Em Atendimento', 1);
+                stmt.run('col-3', 'Aguardando Cliente', 2);
+                stmt.run('col-4', 'Finalizados', 3);
+                stmt.finalize();
+            }
+        });
+    });
 };
 initDatabase();
 
@@ -721,10 +718,15 @@ const getWaClientWrapper = (username) => {
                 const chat = await msg.getChat();
                 if (chat.isGroup) return;
 
-                const chatId = chat.id._serialized;
+                let chatId = chat.id._serialized;
                 const contact = await chat.getContact();
-                const name = contact.name || contact.pushname || contact.number;
                 const phone = contact.number;
+                
+                if (chatId.includes('@lid') && phone) {
+                    chatId = `${phone}@c.us`;
+                }
+
+                const name = contact.name || contact.pushname || phone;
                 let body = msg.body;
                 const timestamp = msg.timestamp * 1000;
                 const fromMe = msg.fromMe ? 1 : 0;
@@ -756,7 +758,40 @@ const getWaClientWrapper = (username) => {
                     if (row) return; // Msg processed exists
                     db.get("SELECT id, profile_pic FROM chats WHERE id = ? OR (phone = ? AND phone IS NOT NULL AND phone != '')", [chatId, phone], async (err, chatRow) => {
                         if (!profilePic && !chatRow?.profile_pic) {
-                            profilePic = await client.getProfilePicUrl(chatId).catch(()=>null);
+                            try {
+                                let picUrl = await client.getProfilePicUrl(chatId).catch(()=>null);
+                                if (!picUrl) picUrl = await client.getProfilePicUrl(chat.id._serialized).catch(()=>null);
+                                if (!picUrl) {
+                                    picUrl = await client.pupPage.evaluate(async (id, lidStr) => {
+                                        try {
+                                            const w = window;
+                                            const getPic = async (wid) => {
+                                                if (!wid) return null;
+                                                if (w.Store?.ProfilePic?.profilePicFind) {
+                                                    const res = await w.Store.ProfilePic.profilePicFind(wid).catch(()=>null);
+                                                    if (res?.eurl) return res.eurl;
+                                                }
+                                                if (w.Store?.ProfilePic?.requestProfilePicFromServer) {
+                                                    const res = await w.Store.ProfilePic.requestProfilePicFromServer(wid).catch(()=>null);
+                                                    if (res?.eurl) return res.eurl;
+                                                }
+                                                return null;
+                                            };
+                                            const w1 = w.Store?.WidFactory?.createWid(id);
+                                            let url = await getPic(w1);
+                                            if (url) return url;
+                                            if (lidStr) {
+                                                const w2 = typeof lidStr === 'string' ? w.Store?.WidFactory?.createWid(lidStr) : lidStr;
+                                                url = await getPic(w2);
+                                            }
+                                            return url;
+                                        } catch (e) { return null; }
+                                    }, chatId, (contact.lidJid || contact.lid));
+                                }
+                                if (picUrl) {
+                                    profilePic = picUrl;
+                                }
+                            } catch(e) {}
                         }
 
                         if (!chatRow) {
