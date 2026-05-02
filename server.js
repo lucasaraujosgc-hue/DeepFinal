@@ -159,29 +159,34 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL
 });
 
-const sqlite3 = require('sqlite3').verbose();
-
-// Initialize SQLite database
-const dbPath = path.join(DATA_DIR, 'database_admin.sqlite');
-const sdb = new sqlite3.Database(dbPath);
+const sqliteToPgSql = (sql) => {
+   let count = 1;
+   return sql.replace(/\?/g, () => '$' + (count++));
+};
 
 const pgDb = {
   all: (sql, params = [], callback) => {
       if (typeof params === 'function') { callback = params; params = []; }
-      sdb.all(sql, params, callback);
+      pool.query(sqliteToPgSql(sql), params, (err, res) => {
+          callback(err, res ? res.rows : null);
+      });
   },
   get: (sql, params = [], callback) => {
       if (typeof params === 'function') { callback = params; params = []; }
-      sdb.get(sql, params, callback);
+      pool.query(sqliteToPgSql(sql), params, (err, res) => {
+          callback(err, res && res.rows.length > 0 ? res.rows[0] : null);
+      });
   },
   run: function(sql, params = [], callback) {
       if (typeof params === 'function') { callback = params; params = []; }
-      // Remove RETURNING if it was added for postgres polyfill, though the caller shouldn't have Postgres syntax now.
-      const cleanSql = sql.replace(/\s+RETURNING\s+\*/i, '');
-      sdb.run(cleanSql, params, function(err) {
+      let finalSql = sqliteToPgSql(sql);
+      if (finalSql.trim().toUpperCase().startsWith('INSERT') && !finalSql.toUpperCase().includes('RETURNING')) {
+          finalSql += ' RETURNING *';
+      }
+      pool.query(finalSql, params, (err, res) => {
           const context = {
-             lastID: this ? this.lastID : null,
-             changes: this ? this.changes : 0
+             lastID: res?.rows?.[0]?.id || null,
+             changes: res?.rowCount || 0
           };
           if (callback) callback.call(context, err);
       });
@@ -192,48 +197,41 @@ const getDb = (username) => {
     return pgDb; 
 };
 
-// --- INITIALIZE TABLES (SQLITE SYNTAX) ---
-const initDatabase = () => {
-    sdb.serialize(() => {
-        sdb.run(`CREATE TABLE IF NOT EXISTS companies (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, docNumber TEXT, type TEXT, email TEXT, whatsapp TEXT)`);
+// --- INITIALIZE TABLES (POSTGRES SYNTAX) ---
+const initDatabase = async () => {
+    try {
+        await pool.query(`CREATE TABLE IF NOT EXISTS companies (id SERIAL PRIMARY KEY, name TEXT NOT NULL, docNumber TEXT, type TEXT, email TEXT, whatsapp TEXT)`);
         
-        // Add docNumber if not exists via pragma
-        sdb.all("PRAGMA table_info(companies)", (err, columns) => {
-            if (!err && columns && !columns.some(c => c.name === 'docNumber')) {
-                sdb.run(`ALTER TABLE companies ADD COLUMN docNumber TEXT`, (e) => {
-                    if (e) log("Erro ao adicionar docNumber", e);
-                });
-            }
-        });
-        
-        sdb.run(`CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, description TEXT, status TEXT, priority TEXT, color TEXT, dueDate TEXT, companyId INTEGER, recurrence TEXT, dayOfWeek TEXT, recurrenceDate TEXT, targetCompanyType TEXT, createdAt TEXT)`);
-        sdb.run(`CREATE TABLE IF NOT EXISTS document_status (id INTEGER PRIMARY KEY AUTOINCREMENT, companyId INTEGER, category TEXT, competence TEXT, status TEXT, UNIQUE(companyId, category, competence))`);
-        sdb.run(`CREATE TABLE IF NOT EXISTS sent_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, companyName TEXT, docName TEXT, category TEXT, sentAt TEXT, channels TEXT, status TEXT)`);
-        sdb.run(`CREATE TABLE IF NOT EXISTS user_settings (id INTEGER PRIMARY KEY CHECK (id = 1), settings TEXT)`);
-        sdb.run(`CREATE TABLE IF NOT EXISTS scheduled_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, message TEXT, nextRun TEXT, recurrence TEXT, active INTEGER, type TEXT, channels TEXT, targetType TEXT, selectedCompanyIds TEXT, attachmentFilename TEXT, attachmentOriginalName TEXT, documentsPayload TEXT, createdBy TEXT)`);
-        sdb.run(`CREATE TABLE IF NOT EXISTS personal_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, topic TEXT, content TEXT, created_at TEXT, updated_at TEXT)`);
+        // Ensure docNumber column exists (migration)
+        try {
+            await pool.query(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS "docNumber" TEXT`);
+        } catch (e) {
+            log("Erro ao adicionar coluna docNumber (pode já existir)", e);
+        }
+        await pool.query(`CREATE TABLE IF NOT EXISTS tasks (id SERIAL PRIMARY KEY, title TEXT NOT NULL, description TEXT, status TEXT, priority TEXT, color TEXT, dueDate TEXT, companyId INTEGER, recurrence TEXT, dayOfWeek TEXT, recurrenceDate TEXT, targetCompanyType TEXT, createdAt TEXT)`);
+        await pool.query(`CREATE TABLE IF NOT EXISTS document_status (id SERIAL PRIMARY KEY, companyId INTEGER, category TEXT, competence TEXT, status TEXT, UNIQUE(companyId, category, competence))`);
+        await pool.query(`CREATE TABLE IF NOT EXISTS sent_logs (id SERIAL PRIMARY KEY, companyName TEXT, docName TEXT, category TEXT, sentAt TEXT, channels TEXT, status TEXT)`);
+        await pool.query(`CREATE TABLE IF NOT EXISTS user_settings (id INTEGER PRIMARY KEY CHECK (id = 1), settings TEXT)`);
+        await pool.query(`CREATE TABLE IF NOT EXISTS scheduled_messages (id SERIAL PRIMARY KEY, title TEXT, message TEXT, nextRun TEXT, recurrence TEXT, active INTEGER, type TEXT, channels TEXT, targetType TEXT, selectedCompanyIds TEXT, attachmentFilename TEXT, attachmentOriginalName TEXT, documentsPayload TEXT, createdBy TEXT)`);
+        await pool.query(`CREATE TABLE IF NOT EXISTS personal_notes (id SERIAL PRIMARY KEY, topic TEXT, content TEXT, created_at TEXT, updated_at TEXT)`);
 
         // Kanban / WhatsApp AI tables
-        sdb.run(`CREATE TABLE IF NOT EXISTS columns (id TEXT PRIMARY KEY, name TEXT NOT NULL, position INTEGER NOT NULL, color TEXT DEFAULT '#e2e8f0')`);
-        sdb.run(`CREATE TABLE IF NOT EXISTS chats (id TEXT PRIMARY KEY, name TEXT, phone TEXT, column_id TEXT, last_message TEXT, last_message_time INTEGER, unread_count INTEGER DEFAULT 0, profile_pic TEXT, last_message_from_me INTEGER DEFAULT 0)`);
-        sdb.run(`CREATE TABLE IF NOT EXISTS tags (id TEXT PRIMARY KEY, name TEXT NOT NULL, color TEXT NOT NULL)`);
-        sdb.run(`CREATE TABLE IF NOT EXISTS chat_tags (chat_id TEXT, tag_id TEXT, PRIMARY KEY (chat_id, tag_id))`);
-        sdb.run(`CREATE TABLE IF NOT EXISTS ai_memory (id INTEGER PRIMARY KEY AUTOINCREMENT, content TEXT, created_at INTEGER, trigger_at INTEGER, is_triggered INTEGER DEFAULT 0)`);
-        sdb.run(`CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, chat_id TEXT NOT NULL, body TEXT, from_me INTEGER, timestamp INTEGER, media_url TEXT, media_type TEXT, media_name TEXT, transcription TEXT)`);
-        sdb.run(`CREATE TABLE IF NOT EXISTS ai_scheduled_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT, message TEXT, trigger_at INTEGER, is_triggered INTEGER DEFAULT 0, created_at INTEGER)`);
+        await pool.query(`CREATE TABLE IF NOT EXISTS columns (id TEXT PRIMARY KEY, name TEXT NOT NULL, position INTEGER NOT NULL, color TEXT DEFAULT '#e2e8f0')`);
+        await pool.query(`CREATE TABLE IF NOT EXISTS chats (id TEXT PRIMARY KEY, name TEXT, phone TEXT, column_id TEXT, last_message TEXT, last_message_time BIGINT, unread_count INTEGER DEFAULT 0, profile_pic TEXT, last_message_from_me INTEGER DEFAULT 0)`);
+        await pool.query(`CREATE TABLE IF NOT EXISTS tags (id TEXT PRIMARY KEY, name TEXT NOT NULL, color TEXT NOT NULL)`);
+        await pool.query(`CREATE TABLE IF NOT EXISTS chat_tags (chat_id TEXT, tag_id TEXT, PRIMARY KEY (chat_id, tag_id))`);
+        await pool.query(`CREATE TABLE IF NOT EXISTS ai_memory (id SERIAL PRIMARY KEY, content TEXT, created_at BIGINT, trigger_at BIGINT, is_triggered INTEGER DEFAULT 0)`);
+        await pool.query(`CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, chat_id TEXT NOT NULL, body TEXT, from_me INTEGER, timestamp BIGINT, media_url TEXT, media_type TEXT, media_name TEXT, transcription TEXT)`);
+        await pool.query(`CREATE TABLE IF NOT EXISTS ai_scheduled_messages (id SERIAL PRIMARY KEY, phone TEXT, message TEXT, trigger_at BIGINT, is_triggered INTEGER DEFAULT 0, created_at BIGINT)`);
 
         // Columns default
-        sdb.get("SELECT COUNT(*) as count FROM columns", (err, row) => {
-            if (row && row.count == 0) {
-                const stmt = sdb.prepare("INSERT INTO columns (id, name, position) VALUES (?, ?, ?)");
-                stmt.run('col-1', 'Novos', 0);
-                stmt.run('col-2', 'Em Atendimento', 1);
-                stmt.run('col-3', 'Aguardando Cliente', 2);
-                stmt.run('col-4', 'Finalizados', 3);
-                stmt.finalize();
-            }
-        });
-    });
+        const cols = await pool.query("SELECT COUNT(*) FROM columns");
+        if (cols.rows[0].count == 0) {
+            await pool.query("INSERT INTO columns (id, name, position) VALUES ('col-1', 'Novos', 0), ('col-2', 'Em Atendimento', 1), ('col-3', 'Aguardando Cliente', 2), ('col-4', 'Finalizados', 3)");
+        }
+    } catch (e) {
+        log("Erro init postgres", e);
+    }
 };
 initDatabase();
 

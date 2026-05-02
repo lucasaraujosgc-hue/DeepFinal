@@ -210,26 +210,26 @@ const App: React.FC = () => {
         onLogout={handleLogout}
       />
       
-      <main className="flex-1 overflow-auto w-full relative">
-        <header className="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center sticky top-0 z-30">
-          <h2 className="text-lg font-semibold text-gray-700 capitalize">
-            {activePage === 'bulksend' ? 'Envio em Massa' : activePage === 'settings' ? 'Usuário' : activePage === 'send' ? 'Envio' : activePage}
-          </h2>
-          <div className="flex items-center gap-4">
-             <div className="text-sm text-right hidden sm:block">
-                <p className="font-bold text-gray-700">Lucas Araújo</p>
-                <p className="text-gray-500 text-xs">Contador | CRC-BA 046968/O</p>
-             </div>
-             <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 font-bold border-2 border-white shadow-sm">
-                LA
-             </div>
-          </div>
-        </header>
+        <div className={`flex-1 overflow-auto w-full relative ${activePage === 'dashboard' ? 'bg-[#f3f4f6]' : ''}`}>
+          <header className={`bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center sticky top-0 z-30 ${activePage === 'dashboard' ? 'hidden' : ''}`}>
+            <h2 className="text-lg font-semibold text-gray-700 capitalize">
+              {activePage === 'bulksend' ? 'Envio em Massa' : activePage === 'settings' ? 'Usuário' : activePage === 'send' ? 'Envio' : activePage}
+            </h2>
+            <div className="flex items-center gap-4">
+               <div className="text-sm text-right hidden sm:block">
+                  <p className="font-bold text-gray-700">Lucas Araújo</p>
+                  <p className="text-gray-500 text-xs">Contador | CRC-BA 046968/O</p>
+               </div>
+               <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 font-bold border-2 border-white shadow-sm">
+                  LA
+               </div>
+            </div>
+          </header>
 
-        <div className="p-6 max-w-7xl mx-auto pb-20">
-          {renderContent()}
+          <div className={activePage === 'dashboard' ? 'h-full' : 'p-6 max-w-7xl mx-auto pb-20'}>
+            {renderContent()}
+          </div>
         </div>
-      </main>
       <Copilot token={localStorage.getItem('cm_auth_token')} />
     </div>
   );

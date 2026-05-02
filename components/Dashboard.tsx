@@ -254,7 +254,7 @@ export default function Dashboard() {
   });
 
   return (
-    <div className="flex flex-col h-[calc(100vh-120px)] bg-[#f3f4f6] rounded-xl overflow-hidden border border-gray-200 shadow-sm relative">
+    <div className="flex flex-col h-full bg-[#f3f4f6] overflow-hidden relative">
       {/* Top Bar for Search and Tags (To save lateral space) */}
       <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center bg-white p-4 border-b border-gray-200 z-10 shadow-sm shrink-0">
         <div className="flex gap-4 items-center flex-1 max-w-xl">
@@ -267,29 +267,6 @@ export default function Dashboard() {
           />
         </div>
         <div className="flex items-center gap-3">
-          <button 
-            onClick={async (e) => {
-                const btn = e.currentTarget;
-                btn.disabled = true;
-                const icon = btn.querySelector('svg');
-                if(icon) icon.classList.add('animate-spin');
-                try {
-                    const res = await apiFetch('/api/wa/sync', { method: 'POST' });
-                    if (res.ok) {
-                        alert('Conversas sincronizadas!');
-                        fetchData();
-                    } else {
-                        alert('Erro ao sincronizar. Verifique se o WhatsApp está conectado.');
-                    }
-                } finally {
-                    btn.disabled = false;
-                    if(icon) icon.classList.remove('animate-spin');
-                }
-            }}
-            className="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 transition-colors shadow-sm disabled:opacity-50"
-          >
-            <RefreshCw size={16} /> Sincronizar WhatsApp
-          </button>
           <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider mr-2">Tags:</span>
           {(tags || []).map(tag => {

@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Bot, Send, X, History, Sparkles } from 'lucide-react';
+import { motion } from 'framer-motion';
+import ReactMarkdown from 'react-markdown';
 
 interface CopilotProps {
   token: string | null;
@@ -73,27 +75,32 @@ export default function Copilot({ token }: CopilotProps) {
   };
 
   return (
-    <>
-      <button
-        onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-full flex justify-center items-center shadow-xl hover:shadow-2xl transition-all hover:scale-105 z-40 group"
-      >
-        <Sparkles className="w-6 h-6 group-hover:rotate-12 transition-transform" />
-      </button>
-
-      {isOpen && (
-        <div className="fixed bottom-24 right-6 w-96 h-[550px] bg-white rounded-2xl shadow-2xl flex flex-col z-50 border border-gray-100 overflow-hidden transform transition-all">
-          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-4 text-white flex justify-between items-center z-10 shadow-md">
+    <motion.div
+      drag
+      dragMomentum={false}
+      className={`fixed ${isOpen ? 'w-96 shadow-2xl' : 'w-14 h-14 shadow-xl'} z-50 rounded-2xl flex flex-col bg-white overflow-hidden transform transition-none`}
+      style={{ right: 24, bottom: 24, width: isOpen ? 384 : 56, height: isOpen ? 550 : 56 }}
+    >
+      {!isOpen ? (
+        <button
+          onClick={() => setIsOpen(true)}
+          className="w-full h-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex justify-center items-center hover:scale-105 transition-all group cursor-grab active:cursor-grabbing"
+        >
+          <Sparkles className="w-6 h-6 group-hover:rotate-12 transition-transform" />
+        </button>
+      ) : (
+        <div className="flex flex-col h-full bg-white border border-gray-100 rounded-2xl">
+          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-4 text-white flex justify-between items-center z-10 shadow-md cursor-grab active:cursor-grabbing">
             <div className="flex items-center gap-2">
               <Bot className="w-5 h-5" />
               <h3 className="font-semibold tracking-tight">Contábil Assistente IA</h3>
             </div>
             <button onClick={() => setIsOpen(false)} className="text-white/80 hover:text-white transition-colors p-1 rounded-md hover:bg-white/10">
-              <X className="w-5 h-5" />
+              <X className="w-5 h-5 cursor-pointer" />
             </button>
           </div>
           
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50 relative">
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50 relative pointer-events-auto">
              <div className="absolute inset-0 opacity-5 pointer-events-none" style={{ backgroundImage: "url('data:image/svg+xml,%3Csvg width=\"60\" height=\"60\" viewBox=\"0 0 60 60\" xmlns=\"http://www.w3.org/2000/svg\"%3E%3Cg fill=\"none\" fill-rule=\"evenodd\"%3E%3Cg fill=\"%239C92AC\" fill-opacity=\"0.4\"%3E%3Cpath d=\"M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')" }}></div>
             {messages.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-3 z-10 relative">
@@ -102,9 +109,11 @@ export default function Copilot({ token }: CopilotProps) {
               </div>
             ) : (
               messages.map(msg => (
-                <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} z-10 relative`}>
+                <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} z-10 relative pointer-events-auto`}>
                   <div className={`max-w-[85%] p-3 rounded-2xl text-sm shadow-sm ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-tr-sm' : 'bg-white border text-gray-700 rounded-tl-sm'}`}>
-                    {msg.content}
+                    <div className="markdown-body prose prose-sm break-words overflow-hidden">
+                      <ReactMarkdown components={{ p: ({node, ...props}) => <span {...props} /> }}>{msg.content}</ReactMarkdown>
+                    </div>
                   </div>
                 </div>
               ))
@@ -121,7 +130,7 @@ export default function Copilot({ token }: CopilotProps) {
             <div ref={messagesEndRef} />
           </div>
 
-          <div className="p-3 bg-white border-t z-10 shadow-[0_-4px_10px_rgba(0,0,0,0.02)]">
+          <div className="p-3 bg-white border-t z-10 shadow-[0_-4px_10px_rgba(0,0,0,0.02)] pointer-events-auto">
             <form onSubmit={handleSubmit} className="flex gap-2">
               <input
                 type="text"
@@ -133,7 +142,7 @@ export default function Copilot({ token }: CopilotProps) {
               <button
                 type="submit"
                 disabled={isLoading || !input.trim()}
-                className="bg-blue-600 outline-none text-white w-12 rounded-xl flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors shadow-md"
+                className="bg-blue-600 outline-none text-white w-12 rounded-xl flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors shadow-md cursor-pointer"
               >
                 <Send className="w-4 h-4 ml-1" />
               </button>
@@ -141,6 +150,6 @@ export default function Copilot({ token }: CopilotProps) {
           </div>
         </div>
       )}
-    </>
+    </motion.div>
   );
 }
